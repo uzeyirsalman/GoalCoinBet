@@ -1216,13 +1216,39 @@ const resolveEvent = async (eventId, winningOption) => {
     const p2pSnap = await getDocs(p2pQuery);
 
     await runTransaction(db, async (transaction) => {
-      // 1. Update event state
+      // 1. Collect all unique user IDs that need balance updates
+      const userIdsToRead = new Set();
+      
+      solosSnap.forEach(docSnap => {
+        const pred = docSnap.data();
+        const isCorrect = pred.prediction === winningOption;
+        if (isCorrect) {
+          userIdsToRead.add(pred.userId);
+        }
+      });
+      
+      p2pSnap.forEach(docSnap => {
+        const bet = docSnap.data();
+        const winnerId = bet.creatorPrediction === winningOption ? bet.creatorId : bet.opponentId;
+        userIdsToRead.add(winnerId);
+      });
+
+      // 2. Perform all READS first (Fetch user snapshots)
+      const userSnaps = {};
+      for (const uid of Array.from(userIdsToRead)) {
+        const userRef = doc(db, "users", uid);
+        userSnaps[uid] = await transaction.get(userRef);
+      }
+
+      // 3. Perform all WRITES after
+
+      // 3a. Update event state
       transaction.update(eventRef, {
         status: "resolved",
         result: winningOption
       });
 
-      // 2. Process Solo predictions
+      // 3b. Process Solo predictions
       solosSnap.forEach(docSnap => {
         const pred = docSnap.data();
         const isCorrect = pred.prediction === winningOption;
@@ -1233,20 +1259,16 @@ const resolveEvent = async (eventId, winningOption) => {
         });
 
         if (isCorrect) {
-          const userRef = doc(db, "users", pred.userId);
-          // In Firestore transactions, reads must happen before writes, but since we are modifying,
-          // we can just read the user profile inside the transaction
-          transaction.get(userRef).then(usrSnap => {
-            if (usrSnap.exists()) {
-              transaction.update(userRef, {
-                balance: usrSnap.data().balance + 15
-              });
-            }
-          });
+          const snap = userSnaps[pred.userId];
+          if (snap && snap.exists()) {
+            transaction.update(snap.ref, {
+              balance: snap.data().balance + 15
+            });
+          }
         }
       });
 
-      // 3. Process P2P bets
+      // 3c. Process P2P bets
       p2pSnap.forEach(docSnap => {
         const bet = docSnap.data();
         const winnerId = bet.creatorPrediction === winningOption ? bet.creatorId : bet.opponentId;
@@ -1257,14 +1279,12 @@ const resolveEvent = async (eventId, winningOption) => {
           resolvedAt: serverTimestamp()
         });
 
-        const winnerRef = doc(db, "users", winnerId);
-        transaction.get(winnerRef).then(wSnap => {
-          if (wSnap.exists()) {
-            transaction.update(winnerRef, {
-              balance: wSnap.data().balance + (bet.wager * 2)
-            });
-          }
-        });
+        const snap = userSnaps[winnerId];
+        if (snap && snap.exists()) {
+          transaction.update(snap.ref, {
+            balance: snap.data().balance + (bet.wager * 2)
+          });
+        }
       });
     });
   }
