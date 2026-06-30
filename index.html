@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GoalCoins — World Cup Betting</title>
+  <meta name="description" content="Predict World Cup matches and challenge friends in peer-to-peer wagers using GoalCoins.">
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+
+  <!-- 1. Header (Sticky) -->
+  <header id="app-header" style="display: none;">
+    <div class="header-container">
+      <a href="#" class="logo" id="header-logo-link">
+        <span class="logo-ball">⚽</span> GoalCoins
+      </a>
+      <div class="user-nav-profile">
+        <div class="coin-tracker" id="balance-tracker" title="Your GoalCoin Balance">
+          <span class="coin-spin">🪙</span>
+          <span id="user-balance-value">250</span>
+        </div>
+        <img src="" alt="Profile" class="profile-avatar" id="user-profile-avatar" style="display: none;">
+        <button class="btn-secondary" id="btn-logout" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    
+    <!-- 2. Unauthenticated Login View -->
+    <div class="auth-container glass-panel" id="auth-view">
+      <div class="auth-hero-icon">🏆</div>
+      <h1 class="auth-title">GoalCoins</h1>
+      <p class="auth-subtitle">Predict World Cup matches and challenge your friends in high-stakes P2P wagers.</p>
+      
+      <button class="btn-google" id="btn-login">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" alt="Google Logo">
+        Sign in with Google
+      </button>
+    </div>
+
+    <!-- 3. Authenticated View Frame -->
+    <div id="main-app-view" style="display: none; flex-direction: column; flex-grow: 1;">
+      
+      <!-- Navigation Tabs (Dynamic) -->
+      <nav class="nav-tabs" id="app-tabs">
+        <button class="tab-btn active" id="tab-dashboard" data-target="dashboard-section">Dashboard</button>
+        <button class="tab-btn" id="tab-admin" data-target="admin-section" style="display: none;">Admin Panel</button>
+      </nav>
+
+      <!-- Dashboard Grid -->
+      <div class="dashboard-grid active-section" id="dashboard-section">
+        
+        <!-- Left: Active / History Bets -->
+        <div>
+          <div class="glass-panel section-card" style="margin-bottom: 1.5rem; text-align: center; padding: 2rem;">
+            <h2 style="margin-bottom: 0.5rem; font-weight: 800; font-size: 1.8rem;">Ready to bet?</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Wager GoalCoins on upcoming matches or custom predictions.</p>
+            <button class="btn-primary" id="btn-trigger-create-bet" style="padding: 1rem 2.5rem; font-size: 1.1rem; box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);">
+              🔥 Create a Bet
+            </button>
+          </div>
+
+          <!-- Active Bets -->
+          <div class="glass-panel section-card">
+            <h2 class="section-title"><span>⏳</span> Ongoing Bets</h2>
+            <div class="bet-feed" id="ongoing-bets-feed">
+              <div class="empty-state">No ongoing bets. Click "Create a Bet" to start!</div>
+            </div>
+          </div>
+
+          <!-- History -->
+          <div class="glass-panel section-card">
+            <h2 class="section-title"><span>📜</span> History Feed</h2>
+            <div class="bet-feed" id="history-bets-feed">
+              <div class="empty-state">No settled bets in your history yet.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Incoming Challenges -->
+        <div>
+          <div class="glass-panel section-card">
+            <h2 class="section-title">
+              <span>📩</span> Challenges Inbox
+              <span id="challenge-badge" style="display: none; background: var(--danger); color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 0.75rem; align-items: center; justify-content: center; font-weight: bold; margin-left: 0.25rem;">0</span>
+            </h2>
+            <div class="challenge-list" id="challenges-feed">
+              <div class="empty-state">Inbox is clean. No challenges pending.</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Admin Dashboard Section -->
+      <div class="dashboard-grid" id="admin-section" style="display: none;">
+        <div class="admin-grid">
+          
+          <!-- Create Event -->
+          <div class="glass-panel section-card">
+            <h2 class="section-title">📅 Create Event</h2>
+            <form id="form-create-event">
+              <div class="form-group">
+                <label class="form-label" for="event-title">Event Title</label>
+                <input class="input-text" type="text" id="event-title" placeholder="e.g., Argentina vs France" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="event-type">Event Type</label>
+                <select class="select-input" id="event-type">
+                  <option value="match">World Cup Match</option>
+                  <option value="custom">Custom Prediction</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="event-kickoff">Kickoff / Lock Time</label>
+                <input class="input-text" type="datetime-local" id="event-kickoff" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="event-options">Options (comma separated, exactly 2 for no-draws validation)</label>
+                <input class="input-text" type="text" id="event-options" placeholder="Argentina, France" required>
+              </div>
+              <button class="btn-primary" type="submit" style="width: 100%;">Create Event</button>
+            </form>
+          </div>
+
+          <!-- Resolve Events -->
+          <div class="glass-panel section-card">
+            <h2 class="section-title">🎯 Resolve Outcomes</h2>
+            <div id="admin-resolve-list">
+              <div class="empty-state">No active events to resolve.</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 4. Sliding Create Bet Drawer -->
+  <div class="drawer-backdrop" id="create-bet-backdrop"></div>
+  <div class="drawer" id="create-bet-drawer">
+    <div class="drawer-header">
+      <h2 style="font-weight: 800; font-size: 1.5rem; color: var(--text-primary);">Create Bet</h2>
+      <button class="drawer-close" id="btn-close-drawer">&times;</button>
+    </div>
+
+    <!-- Step 1: Select Event -->
+    <div id="drawer-step-select-event">
+      <p style="color: var(--text-secondary); margin-bottom: 1rem;">Select an active World Cup match or custom prediction to wager on:</p>
+      <div class="drawer-event-grid" id="drawer-events-list">
+        <div class="empty-state">No active events available to bet on right now. Check back later!</div>
+      </div>
+    </div>
+
+    <!-- Step 2: Configure Wager -->
+    <div class="bet-config-box" id="drawer-step-configure-bet">
+      <div id="selected-event-display" style="padding: 1rem; background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass); border-radius: var(--radius-sm); margin-bottom: 1.5rem;">
+        <h3 id="selected-event-title" style="font-weight: 700; margin-bottom: 0.25rem;">Argentina vs France</h3>
+        <p id="selected-event-deadline" style="font-size: 0.85rem; color: var(--text-secondary);">Deadline: Kickoff date</p>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Wager Mode</label>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn-secondary active" id="btn-mode-solo" style="flex: 1;">Solo Prediction</button>
+          <button class="btn-secondary" id="btn-mode-p2p" style="flex: 1;">P2P Challenge</button>
+        </div>
+      </div>
+
+      <!-- Mode A: Solo Prediction Configuration -->
+      <div id="wager-config-solo">
+        <div class="form-group">
+          <label class="form-label">Select Your Predicted Winner</label>
+          <div class="predict-options-grid" id="solo-options-container">
+            <!-- Dynamic options -->
+          </div>
+        </div>
+        <div style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.1); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1.5rem;">
+          <p style="color: var(--success); font-weight: 600; font-size: 0.95rem; text-align: center;">
+            💡 Solo predictions are free. Win 15 GoalCoins if you predict correctly!
+          </p>
+        </div>
+        <button class="btn-primary" id="btn-submit-solo" style="width: 100%;">Submit Solo Prediction</button>
+      </div>
+
+      <!-- Mode B: P2P Challenge Configuration -->
+      <div id="wager-config-p2p" style="display: none;">
+        <div class="form-group">
+          <label class="form-label" for="p2p-opponent-select">Challenge Opponent</label>
+          <select class="select-input" id="p2p-opponent-select">
+            <option value="">Select Opponent...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Your Predicted Winner (Opponent gets the other team)</label>
+          <div class="predict-options-grid" id="p2p-options-container">
+            <!-- Dynamic options -->
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="p2p-wager-amount">Wager Amount (GoalCoins)</label>
+          <input class="input-text" type="number" id="p2p-wager-amount" min="10" max="1000" placeholder="e.g. 50" required>
+        </div>
+        <div style="background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.1); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1.5rem;">
+          <p style="color: var(--accent); font-weight: 600; font-size: 0.95rem; text-align: center;" id="p2p-wager-summary-info">
+            🔒 50 coins will be deducted immediately from your balance as escrow.
+          </p>
+        </div>
+        <button class="btn-primary" id="btn-submit-p2p" style="width: 100%;">Send P2P Challenge</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Firebase Web SDK Core and Products (v10+ ESM) -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
