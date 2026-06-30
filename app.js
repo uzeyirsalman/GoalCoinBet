@@ -7,7 +7,7 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query
 // 1. Firebase Configuration & Mode Detection
 // ==========================================
 const firebaseConfig = {
-  apiKey: "AIzaSyCjBEdmBc0YT6YrB4rRPabMEiEvfHn-bW8",
+  apiKey: "AIzaSyDJP87cRL0B1fa7OiTvWGqt-alcoZ374xw",
   authDomain: "goalcoinbet.firebaseapp.com",
   projectId: "goalcoinbet",
   storageBucket: "goalcoinbet.firebasestorage.app",
