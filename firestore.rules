@@ -80,6 +80,7 @@ service cloud.firestore {
       allow create: if request.auth != null 
         && request.resource.data.userId == request.auth.uid
         && get(/databases/$(database)/documents/events/$(request.resource.data.eventId)).data.status == "active"
+        && request.time < timestamp(get(/databases/$(database)/documents/events/$(request.resource.data.eventId)).data.kickoff)
         && request.resource.data.status == "active";
         
       allow update, delete: if isAdmin() || (
@@ -96,6 +97,7 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.creatorId == request.auth.uid
         && request.resource.data.status == "pending"
+        && request.time < timestamp(get(/databases/$(database)/documents/events/$(request.resource.data.eventId)).data.kickoff)
         // Force the creator's balance update to happen in the same transaction and match the wager
         && getUserDataAfter(request.resource.data.creatorId).balance == getUserData(request.resource.data.creatorId).balance - request.resource.data.wager;
 
@@ -106,6 +108,7 @@ service cloud.firestore {
             request.auth.uid == resource.data.opponentId &&
             resource.data.status == "pending" &&
             request.resource.data.status == "active" &&
+            request.time < timestamp(get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.kickoff) &&
             getUserDataAfter(resource.data.opponentId).balance == getUserData(resource.data.opponentId).balance - resource.data.wager
           ) ||
           // Opponent declining the challenge (refunds creator)

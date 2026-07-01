@@ -645,11 +645,11 @@ const openCreateBetDrawer = () => {
   }
 
   elDrawerEventsList.innerHTML = currentEvents.map(ev => {
-    const formattedDate = new Date(ev.kickoff).toLocaleString();
+    const formattedDate = new Date(ev.kickoff).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     return `
       <div class="glass-panel event-select-card" data-event-id="${ev.id}">
         <h4 style="font-weight:700; font-size:1.1rem; margin-bottom:0.25rem;">${ev.title}</h4>
-        <span style="font-size:0.8rem; color:var(--text-muted);">Deadline: ${formattedDate}</span>
+        <span style="font-size:0.8rem; color:var(--text-muted);">Kickoff Date: ${formattedDate}</span>
       </div>
     `;
   }).join("");
@@ -677,7 +677,7 @@ const selectEventForBet = (eventId) => {
 
   drawerSelectedEvent = ev;
   elSelectedEventTitle.textContent = ev.title;
-  elSelectedEventDeadline.textContent = `Deadline: ${new Date(ev.kickoff).toLocaleString()}`;
+  elSelectedEventDeadline.textContent = `Kickoff Date: ${new Date(ev.kickoff).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
   
   // Setup configuration Step 2
   elDrawerConfigureBet.classList.add("active");
@@ -741,6 +741,10 @@ const handleSoloSubmit = async () => {
   if (!drawerSelectedEvent) return;
   if (!drawerSelectedPrediction) {
     alert("Please select a team/option to predict!");
+    return;
+  }
+  if (new Date(drawerSelectedEvent.kickoff) <= new Date()) {
+    alert("This event has already locked! You can no longer place predictions.");
     return;
   }
 
@@ -824,6 +828,11 @@ const handleP2PSubmit = async () => {
   }
   if (wager > currentUser.balance) {
     alert(`Insufficient balance! You only have ${currentUser.balance} GoalCoins.`);
+    return;
+  }
+
+  if (new Date(drawerSelectedEvent.kickoff) <= new Date()) {
+    alert("This event has already locked! You can no longer place challenges.");
     return;
   }
 
@@ -924,6 +933,12 @@ const acceptP2PBet = async (betId) => {
     const bet = bets.find(b => b.id === betId);
     if (!bet) throw "Bet not found";
     
+    // Check if event is locked
+    const event = getMockDB("gc_events", []).find(e => e.id === bet.eventId);
+    if (event && new Date(event.kickoff) <= new Date()) {
+      throw "This event has already locked. You can no longer accept this challenge.";
+    }
+
     const opponent = users.find(u => u.uid === currentUser.uid);
     if (opponent.balance < bet.wager) throw "Insufficient balance";
 
@@ -943,6 +958,13 @@ const acceptP2PBet = async (betId) => {
       const betSnap = await transaction.get(betRef);
 
       if (!oppSnap.exists() || !betSnap.exists()) throw "Profile or bet not found";
+
+      const eventRef = doc(db, "events", betSnap.data().eventId);
+      const eventSnap = await transaction.get(eventRef);
+
+      if (eventSnap.exists() && new Date(eventSnap.data().kickoff) <= new Date()) {
+        throw "This event has already locked. You can no longer accept this challenge.";
+      }
 
       const wager = betSnap.data().wager;
       const balance = oppSnap.data().balance;

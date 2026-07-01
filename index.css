@@ -329,6 +329,13 @@ header {
   border-color: var(--border-glass-hover);
 }
 
+.btn-secondary.active {
+  background: rgba(6, 182, 212, 0.1);
+  border-color: var(--primary);
+  box-shadow: 0 0 15px var(--primary-glow);
+  color: var(--primary);
+}
+
 /* Challenge Inbox Items */
 .challenge-list {
   display: flex;
@@ -543,6 +550,11 @@ header {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.select-input option {
+  background-color: #1e293b; /* Slate-gray background */
+  color: var(--text-primary); /* Light primary text */
 }
 
 .predict-options-grid {
