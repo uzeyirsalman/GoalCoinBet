@@ -1,7 +1,7 @@
 // Firebase Web SDK Modules (v10+ ESM)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, getDocs, onSnapshot, runTransaction, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, getDocs, onSnapshot, runTransaction, serverTimestamp, writeBatch, Timestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // ==========================================
 // 1. Firebase Configuration & Mode Detection
@@ -31,6 +31,13 @@ if (!isMockMode) {
     console.error("Firebase init failed, fallback to mock mode:", error);
   }
 }
+
+const parseKickoff = (kickoff) => {
+  if (!kickoff) return new Date();
+  if (typeof kickoff.toDate === "function") return kickoff.toDate();
+  if (kickoff.seconds) return new Date(kickoff.seconds * 1000);
+  return new Date(kickoff);
+};
 
 // ==========================================
 // 2. Local Mock Database Simulation
@@ -184,6 +191,24 @@ const elChallengeBadge = document.getElementById("challenge-badge");
 
 const elFormCreateEvent = document.getElementById("form-create-event");
 const elAdminResolveList = document.getElementById("admin-resolve-list");
+const elUserVaultValue = document.getElementById("user-vault-value");
+const elBtnResetSeason = document.getElementById("btn-reset-season");
+
+const elChoiceModal = document.getElementById("choice-modal");
+const elChoiceModalBackdrop = document.getElementById("choice-modal-backdrop");
+const elChoiceModalOptions = document.getElementById("choice-modal-options");
+const elChoiceModalCancel = document.getElementById("choice-modal-cancel");
+
+const elTabLeaderboard = document.getElementById("tab-leaderboard");
+const elLeaderboardSection = document.getElementById("leaderboard-section");
+const elLeaderboardActiveList = document.getElementById("leaderboard-active-list");
+const elLeaderboardVaultList = document.getElementById("leaderboard-vault-list");
+const elBtnUnfoldActive = document.getElementById("btn-unfold-active");
+const elBtnUnfoldVault = document.getElementById("btn-unfold-vault");
+
+// Leaderboard expansion states
+let activeLeaderboardExpanded = false;
+let vaultLeaderboardExpanded = false;
 
 // State holders for Drawer creation
 let drawerSelectedEvent = null;
@@ -335,6 +360,7 @@ const setupDataSubscriptions = () => {
       if (docSnap.exists()) {
         currentUser = docSnap.data();
         elBalanceValue.textContent = currentUser.balance;
+        elUserVaultValue.textContent = currentUser.vaultBalance || 0;
       }
     });
     listeners.push(userUnsub);
@@ -443,6 +469,7 @@ const setupDataSubscriptions = () => {
 const renderUI = () => {
   // Update balance display
   elBalanceValue.textContent = currentUser.balance;
+  elUserVaultValue.textContent = currentUser.vaultBalance || 0;
 
   // Render Ongoing Bets
   renderBetsFeed(ongoingBets, elOngoingBetsFeed, false);
@@ -455,6 +482,9 @@ const renderUI = () => {
 
   // Populate P2P Opponents
   populateOpponentDropdown();
+
+  // Render Leaderboards
+  renderLeaderboards();
 
   // If Admin, render Admin Panel resolve list
   if (currentUser.email === "enversalman14@gmail.com") {
@@ -481,6 +511,8 @@ const renderBetsFeed = (bets, container, isHistory) => {
         footerDetail = `<span class="outcome-badge cancelled">Cancelled</span>`;
       } else if (bet.status === "declined") {
         footerDetail = `<span class="outcome-badge declined">Declined</span>`;
+      } else if (bet.status === "refunded") {
+        footerDetail = `<span class="outcome-badge cancelled">Refunded (+${bet.wager})</span>`;
       } else {
         // resolved
         const isWin = isSolo ? bet.isCorrect : (bet.winnerId === currentUser.uid);
@@ -501,7 +533,13 @@ const renderBetsFeed = (bets, container, isHistory) => {
       }
     }
 
-    const predictionDisplay = isSolo ? bet.prediction : `${bet.creatorName}: <b>${bet.creatorPrediction}</b>`;
+    let predictionDisplay = "";
+    if (isSolo) {
+      predictionDisplay = bet.prediction;
+    } else {
+      const oppPrediction = bet.opponentPrediction || "Not Selected Yet";
+      predictionDisplay = `${bet.creatorName}: <b>${bet.creatorPrediction}</b> vs ${bet.opponentName}: <b>${oppPrediction}</b>`;
+    }
 
     return `
       <div class="glass-panel bet-card">
@@ -558,10 +596,17 @@ const renderChallengesInbox = () => {
   elChallengeBadge.textContent = incomingChallenges.length;
 
   elChallengesFeed.innerHTML = incomingChallenges.map(bet => {
-    // Opponent takes the opposing side automatically in no-draws mode
     const event = currentEvents.find(e => e.id === bet.eventId);
-    const options = event ? event.options : ["Choice A", "Choice B"];
-    const opponentPrediction = options.find(opt => opt !== bet.creatorPrediction) || "Opposing Team";
+    const options = bet.options || (event ? event.options : ["Choice A", "Choice B"]);
+    const isBinary = options.length === 2;
+    
+    let selectionHTML = "";
+    if (isBinary) {
+      const opponentPrediction = options.find(opt => opt !== bet.creatorPrediction) || "Opposing Team";
+      selectionHTML = `Challenge: You get <b>${opponentPrediction}</b> (Creator has ${bet.creatorPrediction})`;
+    } else {
+      selectionHTML = `Challenge: Select your prediction from the remaining options (Creator has <b>${bet.creatorPrediction}</b>)`;
+    }
 
     return `
       <div class="glass-panel challenge-card">
@@ -570,11 +615,11 @@ const renderChallengesInbox = () => {
           <div class="challenge-meta">
             From <b>${bet.creatorName}</b> • Wager: <strong style="color:var(--accent);">${bet.wager} Coins</strong>
           </div>
-          <div style="font-size:0.85rem; margin-top:0.25rem;">
-            Challenge: You get <b>${opponentPrediction}</b> (Creator has ${bet.creatorPrediction})
+          <div style="font-size:0.85rem; margin-top:0.25rem; width: 100%;">
+            ${selectionHTML}
           </div>
         </div>
-        <div class="challenge-actions">
+        <div class="challenge-actions" style="align-self: flex-end; margin-top: 0.5rem;">
           <button class="btn-accept" data-bet-id="${bet.id}">Accept</button>
           <button class="btn-decline" data-bet-id="${bet.id}">Decline</button>
         </div>
@@ -591,12 +636,59 @@ const renderChallengesInbox = () => {
         alert("Insufficient balance! You need " + bet.wager + " GoalCoins to accept this challenge.");
         return;
       }
-      try {
-        btn.disabled = true;
-        await acceptP2PBet(betId);
-      } catch (err) {
-        alert("Accepting challenge failed: " + err);
-        btn.disabled = false;
+
+      // Find selected option
+      const event = currentEvents.find(e => e.id === bet.eventId);
+      const options = bet.options || (event ? event.options : []);
+      
+      if (options.length === 2) {
+        const chosenPrediction = options.find(opt => opt !== bet.creatorPrediction) || "";
+        try {
+          btn.disabled = true;
+          btn.textContent = "Accepting...";
+          await acceptP2PBet(betId, chosenPrediction);
+        } catch (err) {
+          alert("Accepting challenge failed: " + err);
+          btn.disabled = false;
+          btn.textContent = "Accept";
+        }
+      } else {
+        // Multi-option: open the popup choice modal
+        const remainingOptions = options.filter(opt => opt !== bet.creatorPrediction);
+        
+        elChoiceModalOptions.innerHTML = remainingOptions.map(opt => `
+          <button class="btn-primary choice-btn" style="width: 100%; text-transform: none; padding: 0.6rem;" data-option="${opt}">${opt}</button>
+        `).join("");
+        
+        // Show modal and backdrop
+        elChoiceModal.style.display = "block";
+        elChoiceModalBackdrop.classList.add("active");
+        
+        // Modal cancel handlers
+        const closeModal = () => {
+          elChoiceModal.style.display = "none";
+          elChoiceModalBackdrop.classList.remove("active");
+        };
+        
+        elChoiceModalCancel.onclick = closeModal;
+        elChoiceModalBackdrop.onclick = closeModal;
+        
+        // Option click handlers
+        elChoiceModalOptions.querySelectorAll(".choice-btn").forEach(choiceBtn => {
+          choiceBtn.addEventListener("click", async () => {
+            const chosenPrediction = choiceBtn.getAttribute("data-option");
+            closeModal();
+            try {
+              btn.disabled = true;
+              btn.textContent = "Accepting...";
+              await acceptP2PBet(betId, chosenPrediction);
+            } catch (err) {
+              alert("Accepting challenge failed: " + err);
+              btn.disabled = false;
+              btn.textContent = "Accept";
+            }
+          });
+        });
       }
     });
   });
@@ -613,6 +705,81 @@ const renderChallengesInbox = () => {
       }
     });
   });
+};
+
+const renderLeaderboards = () => {
+  // 1. Get all users including the current user
+  const unifiedUsers = [currentUser, ...allUsers];
+
+  // Remove duplicates based on uid
+  const uniqueUsers = [];
+  const seenUids = new Set();
+  unifiedUsers.forEach(u => {
+    if (u && u.uid && !seenUids.has(u.uid)) {
+      seenUids.add(u.uid);
+      uniqueUsers.push(u);
+    }
+  });
+
+  // 2. Sort for Active Balance Leaderboard (Current Best)
+  const sortedActive = [...uniqueUsers].sort((a, b) => (b.balance || 0) - (a.balance || 0));
+
+  // 3. Sort for Archived Wealth Leaderboard (Vault Legends)
+  const sortedVault = [...uniqueUsers].sort((a, b) => (b.vaultBalance || 0) - (a.vaultBalance || 0));
+
+  // Determine limit based on expansion state
+  const activeLimit = activeLeaderboardExpanded ? 50 : 10;
+  const vaultLimit = vaultLeaderboardExpanded ? 50 : 10;
+
+  // Render Active List
+  const activeSlice = sortedActive.slice(0, activeLimit);
+  if (activeSlice.length === 0) {
+    elLeaderboardActiveList.innerHTML = `<div class="empty-state">No users to display.</div>`;
+  } else {
+    elLeaderboardActiveList.innerHTML = activeSlice.map((u, index) => {
+      const rank = index + 1;
+      const isMe = u.uid === currentUser.uid;
+      const rankClass = rank <= 3 ? `rank-${rank}` : "";
+      const avatarSrc = u.photoURL || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80&h=80"; // fallback
+      return `
+        <div class="leaderboard-item ${isMe ? "highlight-me" : ""}">
+          <div class="leaderboard-left">
+            <span class="rank-badge ${rankClass}">${rank}</span>
+            <img src="${avatarSrc}" alt="Avatar" class="leaderboard-avatar">
+            <span class="leaderboard-name">${u.displayName || "Anonymous"}${isMe ? " (You)" : ""}</span>
+          </div>
+          <span class="leaderboard-score">${u.balance} Coins</span>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // Render Vault List
+  const vaultSlice = sortedVault.slice(0, vaultLimit);
+  if (vaultSlice.length === 0) {
+    elLeaderboardVaultList.innerHTML = `<div class="empty-state">No archived wealth to display.</div>`;
+  } else {
+    elLeaderboardVaultList.innerHTML = vaultSlice.map((u, index) => {
+      const rank = index + 1;
+      const isMe = u.uid === currentUser.uid;
+      const rankClass = rank <= 3 ? `rank-${rank}` : "";
+      const avatarSrc = u.photoURL || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80&h=80"; // fallback
+      return `
+        <div class="leaderboard-item ${isMe ? "highlight-me" : ""}">
+          <div class="leaderboard-left">
+            <span class="rank-badge ${rankClass}">${rank}</span>
+            <img src="${avatarSrc}" alt="Avatar" class="leaderboard-avatar">
+            <span class="leaderboard-name">${u.displayName || "Anonymous"}${isMe ? " (You)" : ""}</span>
+          </div>
+          <span class="leaderboard-score">🏦 ${u.vaultBalance || 0} Coins</span>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // Update button texts
+  elBtnUnfoldActive.textContent = activeLeaderboardExpanded ? "Fold to Top 10" : `Unfold Top 50 (Total: ${sortedActive.length})`;
+  elBtnUnfoldVault.textContent = vaultLeaderboardExpanded ? "Fold to Top 10" : `Unfold Top 50 (Total: ${sortedVault.length})`;
 };
 
 const populateOpponentDropdown = () => {
@@ -645,7 +812,7 @@ const openCreateBetDrawer = () => {
   }
 
   elDrawerEventsList.innerHTML = currentEvents.map(ev => {
-    const formattedDate = new Date(ev.kickoff).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const formattedDate = parseKickoff(ev.kickoff).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     return `
       <div class="glass-panel event-select-card" data-event-id="${ev.id}">
         <h4 style="font-weight:700; font-size:1.1rem; margin-bottom:0.25rem;">${ev.title}</h4>
@@ -677,7 +844,7 @@ const selectEventForBet = (eventId) => {
 
   drawerSelectedEvent = ev;
   elSelectedEventTitle.textContent = ev.title;
-  elSelectedEventDeadline.textContent = `Kickoff Date: ${new Date(ev.kickoff).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+  elSelectedEventDeadline.textContent = `Kickoff Date: ${parseKickoff(ev.kickoff).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
   
   // Setup configuration Step 2
   elDrawerConfigureBet.classList.add("active");
@@ -743,7 +910,7 @@ const handleSoloSubmit = async () => {
     alert("Please select a team/option to predict!");
     return;
   }
-  if (new Date(drawerSelectedEvent.kickoff) <= new Date()) {
+  if (parseKickoff(drawerSelectedEvent.kickoff) <= new Date()) {
     alert("This event has already locked! You can no longer place predictions.");
     return;
   }
@@ -831,7 +998,7 @@ const handleP2PSubmit = async () => {
     return;
   }
 
-  if (new Date(drawerSelectedEvent.kickoff) <= new Date()) {
+  if (parseKickoff(drawerSelectedEvent.kickoff) <= new Date()) {
     alert("This event has already locked! You can no longer place challenges.");
     return;
   }
@@ -866,6 +1033,7 @@ const handleP2PSubmit = async () => {
         wager: wager,
         status: "pending",
         winnerId: null,
+        options: drawerSelectedEvent.options,
         createdAt: new Date().toISOString(),
         acceptedAt: null,
         resolvedAt: null
@@ -905,6 +1073,7 @@ const handleP2PSubmit = async () => {
           wager: wager,
           status: "pending",
           winnerId: null,
+          options: drawerSelectedEvent.options,
           createdAt: serverTimestamp(),
           acceptedAt: null,
           resolvedAt: null
@@ -925,7 +1094,7 @@ const handleP2PSubmit = async () => {
 // ==========================================
 // 8. P2P Wager Action Transactions
 // ==========================================
-const acceptP2PBet = async (betId) => {
+const acceptP2PBet = async (betId, opponentPrediction) => {
   if (isMockMode) {
     const users = getMockDB("gc_users", []);
     const bets = getMockDB("gc_p2p_bets", []);
@@ -945,6 +1114,7 @@ const acceptP2PBet = async (betId) => {
     opponent.balance -= bet.wager;
     opponent.activeBetId = betId;
     bet.status = "active";
+    bet.opponentPrediction = opponentPrediction;
     bet.acceptedAt = new Date().toISOString();
 
     localStorage.setItem("gc_users", JSON.stringify(users));
@@ -980,6 +1150,7 @@ const acceptP2PBet = async (betId) => {
       // Activate bet
       transaction.update(betRef, {
         status: "active",
+        opponentPrediction: opponentPrediction,
         acceptedAt: serverTimestamp()
       });
     });
@@ -1086,8 +1257,12 @@ const handleCreateEvent = async (e) => {
   const optionsString = document.getElementById("event-options").value.trim();
   
   const options = optionsString.split(",").map(s => s.trim()).filter(Boolean);
-  if (options.length !== 2) {
-    alert("Error: In no-draws binary betting, events must have exactly 2 choices (options).");
+  if (type === "match" && options.length !== 2) {
+    alert("Error: Match events must have exactly 2 options (choices) for binary win/lose outcome.");
+    return;
+  }
+  if (type === "custom" && options.length < 2) {
+    alert("Error: Custom events must have at least 2 options.");
     return;
   }
 
@@ -1113,7 +1288,7 @@ const handleCreateEvent = async (e) => {
       await addDoc(eventsRef, {
         title,
         type,
-        kickoff: kickoffTime,
+        kickoff: Timestamp.fromDate(new Date(kickoff)),
         options,
         status: "active",
         result: null,
@@ -1202,22 +1377,34 @@ const resolveEvent = async (eventId, winningOption) => {
       }
     });
 
-    // 3. Resolve P2P Bets (winner gets entire pot)
+    // 3. Resolve P2P Bets (winner gets entire pot, refund if neither correct)
     bets.forEach(b => {
       if (b.eventId === eventId && b.status === "active") {
-        let winnerId = "";
+        let winnerId = null;
+        let isRefund = false;
+
         if (b.creatorPrediction === winningOption) {
           winnerId = b.creatorId;
-        } else {
+        } else if (b.opponentPrediction === winningOption) {
           winnerId = b.opponentId;
+        } else {
+          isRefund = true;
         }
 
-        b.status = "resolved";
-        b.winnerId = winnerId;
         b.resolvedAt = new Date().toISOString();
 
-        const winner = users.find(u => u.uid === winnerId);
-        if (winner) winner.balance += (b.wager * 2);
+        if (isRefund) {
+          b.status = "refunded";
+          const creator = users.find(u => u.uid === b.creatorId);
+          if (creator) creator.balance += b.wager;
+          const opponent = users.find(u => u.uid === b.opponentId);
+          if (opponent) opponent.balance += b.wager;
+        } else {
+          b.status = "resolved";
+          b.winnerId = winnerId;
+          const winner = users.find(u => u.uid === winnerId);
+          if (winner) winner.balance += (b.wager * 2);
+        }
       }
     });
 
@@ -1251,8 +1438,15 @@ const resolveEvent = async (eventId, winningOption) => {
       
       p2pSnap.forEach(docSnap => {
         const bet = docSnap.data();
-        const winnerId = bet.creatorPrediction === winningOption ? bet.creatorId : bet.opponentId;
-        userIdsToRead.add(winnerId);
+        if (bet.creatorPrediction === winningOption) {
+          userIdsToRead.add(bet.creatorId);
+        } else if (bet.opponentPrediction === winningOption) {
+          userIdsToRead.add(bet.opponentId);
+        } else {
+          // Refund case: read both
+          userIdsToRead.add(bet.creatorId);
+          userIdsToRead.add(bet.opponentId);
+        }
       });
 
       // 2. Perform all READS first (Fetch user snapshots)
@@ -1293,20 +1487,202 @@ const resolveEvent = async (eventId, winningOption) => {
       // 3c. Process P2P bets
       p2pSnap.forEach(docSnap => {
         const bet = docSnap.data();
-        const winnerId = bet.creatorPrediction === winningOption ? bet.creatorId : bet.opponentId;
+        let winnerId = null;
+        let isRefund = false;
 
-        transaction.update(docSnap.ref, {
-          status: "resolved",
-          winnerId: winnerId,
-          resolvedAt: serverTimestamp()
-        });
+        if (bet.creatorPrediction === winningOption) {
+          winnerId = bet.creatorId;
+        } else if (bet.opponentPrediction === winningOption) {
+          winnerId = bet.opponentId;
+        } else {
+          isRefund = true;
+        }
 
-        const snap = userSnaps[winnerId];
-        if (snap && snap.exists()) {
-          transaction.update(snap.ref, {
-            balance: snap.data().balance + (bet.wager * 2)
+        if (isRefund) {
+          transaction.update(docSnap.ref, {
+            status: "refunded",
+            resolvedAt: serverTimestamp()
+          });
+
+          const cSnap = userSnaps[bet.creatorId];
+          if (cSnap && cSnap.exists()) {
+            transaction.update(cSnap.ref, {
+              balance: cSnap.data().balance + bet.wager
+            });
+          }
+
+          const oSnap = userSnaps[bet.opponentId];
+          if (oSnap && oSnap.exists()) {
+            transaction.update(oSnap.ref, {
+              balance: oSnap.data().balance + bet.wager
+            });
+          }
+        } else {
+          transaction.update(docSnap.ref, {
+            status: "resolved",
+            winnerId: winnerId,
+            resolvedAt: serverTimestamp()
+          });
+
+          const snap = userSnaps[winnerId];
+          if (snap && snap.exists()) {
+            transaction.update(snap.ref, {
+              balance: snap.data().balance + (bet.wager * 2)
+            });
+          }
+        }
+      });
+    });
+  }
+};
+
+const handleResetCycleClick = async () => {
+  if (confirm("🚨 WARNING: Are you sure you want to RESET THE SEASON?\n\nThis will auto-refund all active/pending wagers, archive everyone's total balances to their personal Vault, reset everyone's active balance to 250, and cancel all active events.\n\nThis action is irreversible! Do you want to proceed?")) {
+    elBtnResetSeason.disabled = true;
+    elBtnResetSeason.textContent = "Resetting Season...";
+    try {
+      await handleResetCycle();
+      alert("Season successfully reset! Balances archived and reset to 250.");
+    } catch (err) {
+      alert("Reset failed: " + err);
+    } finally {
+      elBtnResetSeason.disabled = false;
+      elBtnResetSeason.textContent = "Reset Season Cycle";
+    }
+  }
+};
+
+const handleResetCycle = async () => {
+  if (isMockMode) {
+    const users = getMockDB("gc_users", []);
+    const bets = getMockDB("gc_p2p_bets", []);
+    const events = getMockDB("gc_events", []);
+    const solos = getMockDB("gc_solo_predictions", []);
+
+    // A map to track computed refunds for each user ID
+    const refunds = {};
+    users.forEach(u => refunds[u.uid] = 0);
+
+    // Calculate refunds for all active and pending P2P bets
+    bets.forEach(b => {
+      if (b.status === "pending" || b.status === "active") {
+        // Refund creator
+        if (refunds[b.creatorId] !== undefined) {
+          refunds[b.creatorId] += b.wager;
+        }
+        // Refund opponent if active
+        if (b.status === "active" && refunds[b.opponentId] !== undefined) {
+          refunds[b.opponentId] += b.wager;
+        }
+        // Mark bet as cancelled
+        b.status = "cancelled";
+        b.resolvedAt = new Date().toISOString();
+      }
+    });
+
+    // Update users: vault = vault + current_balance + refund, balance = 250
+    users.forEach(u => {
+      const refund = refunds[u.uid] || 0;
+      u.vaultBalance = (u.vaultBalance || 0) + u.balance + refund;
+      u.balance = 250;
+      u.activeBetId = null; // Clear active bet locks
+    });
+
+    // Cancel all active events and solos
+    events.forEach(e => {
+      if (e.status === "active") {
+        e.status = "cancelled";
+      }
+    });
+    solos.forEach(s => {
+      if (s.status === "active") {
+        s.status = "cancelled";
+        s.resolvedAt = new Date().toISOString();
+      }
+    });
+
+    // Save mock database
+    localStorage.setItem("gc_users", JSON.stringify(users));
+    localStorage.setItem("gc_p2p_bets", JSON.stringify(bets));
+    localStorage.setItem("gc_events", JSON.stringify(events));
+    localStorage.setItem("gc_solo_predictions", JSON.stringify(solos));
+
+    // Force re-render
+    refreshMockStateAndRender();
+  } else {
+    // Production Firebase Event Resolution Transaction
+    // Fetch collections
+    const usersSnap = await getDocs(collection(db, "users"));
+    const p2pQuery = query(collection(db, "p2p_bets"), where("status", "in", ["pending", "active"]));
+    const p2pSnap = await getDocs(p2pQuery);
+    const eventsQuery = query(collection(db, "events"), where("status", "==", "active"));
+    const eventsSnap = await getDocs(eventsQuery);
+    const solosQuery = query(collection(db, "solo_predictions"), where("status", "==", "active"));
+    const solosSnap = await getDocs(solosQuery);
+
+    await runTransaction(db, async (transaction) => {
+      // 1. Perform all READS of user documents inside the transaction to get their current fresh balances
+      const userDocSnaps = {};
+      for (const uDoc of usersSnap.docs) {
+        const userRef = doc(db, "users", uDoc.id);
+        userDocSnaps[uDoc.id] = await transaction.get(userRef);
+      }
+
+      // 2. Calculate refunds for each user
+      const refunds = {};
+      usersSnap.forEach(uDoc => {
+        refunds[uDoc.id] = 0;
+      });
+
+      p2pSnap.forEach(bDoc => {
+        const b = bDoc.data();
+        if (refunds[b.creatorId] !== undefined) {
+          refunds[b.creatorId] += b.wager;
+        }
+        if (b.status === "active" && refunds[b.opponentId] !== undefined) {
+          refunds[b.opponentId] += b.wager;
+        }
+      });
+
+      // 3. Perform WRITES
+
+      // 3a. Update users
+      for (const uDoc of usersSnap.docs) {
+        const freshSnap = userDocSnaps[uDoc.id];
+        if (freshSnap && freshSnap.exists()) {
+          const currentBal = freshSnap.data().balance || 0;
+          const currentVault = freshSnap.data().vaultBalance || 0;
+          const refund = refunds[uDoc.id] || 0;
+
+          transaction.update(freshSnap.ref, {
+            vaultBalance: currentVault + currentBal + refund,
+            balance: 250,
+            activeBetId: null
           });
         }
+      }
+
+      // 3b. Update P2P Bets to cancelled
+      p2pSnap.forEach(bDoc => {
+        transaction.update(bDoc.ref, {
+          status: "cancelled",
+          resolvedAt: serverTimestamp()
+        });
+      });
+
+      // 3c. Update events to cancelled
+      eventsSnap.forEach(eDoc => {
+        transaction.update(eDoc.ref, {
+          status: "cancelled"
+        });
+      });
+
+      // 3d. Update solos to cancelled
+      solosSnap.forEach(sDoc => {
+        transaction.update(sDoc.ref, {
+          status: "cancelled",
+          resolvedAt: serverTimestamp()
+        });
       });
     });
   }
@@ -1316,7 +1692,7 @@ const resolveEvent = async (eventId, winningOption) => {
 // 10. Navigation & Router Setup
 // ==========================================
 const switchTab = (targetId) => {
-  const tabs = [elDashboardSection, elAdminSection];
+  const tabs = [elDashboardSection, elLeaderboardSection, elAdminSection];
   tabs.forEach(sec => {
     if (sec.id === targetId) {
       sec.style.display = "grid";
@@ -1368,6 +1744,19 @@ const initApp = () => {
 
   // Admin Event Form
   elFormCreateEvent.addEventListener("submit", handleCreateEvent);
+
+  // Admin Season Reset
+  elBtnResetSeason.addEventListener("click", handleResetCycleClick);
+
+  // Leaderboard expansion controls
+  elBtnUnfoldActive.addEventListener("click", () => {
+    activeLeaderboardExpanded = !activeLeaderboardExpanded;
+    renderLeaderboards();
+  });
+  elBtnUnfoldVault.addEventListener("click", () => {
+    vaultLeaderboardExpanded = !vaultLeaderboardExpanded;
+    renderLeaderboards();
+  });
 
   // Check initial Auth
   checkAuthState();

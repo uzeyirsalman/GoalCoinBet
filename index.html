@@ -20,6 +20,10 @@
           <span class="coin-spin">🪙</span>
           <span id="user-balance-value">250</span>
         </div>
+        <div class="coin-tracker" id="vault-tracker" title="Your Vault Balance (Archived Coins)" style="background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.25);">
+          <span style="font-size: 1.1rem; margin-right: 0.25rem;">🏦</span>
+          <span id="user-vault-value" style="color: var(--accent); font-weight: 700;">0</span>
+        </div>
         <img src="" alt="Profile" class="profile-avatar" id="user-profile-avatar" style="display: none;">
         <button class="btn-secondary" id="btn-logout" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">Logout</button>
       </div>
@@ -43,9 +47,9 @@
     <!-- 3. Authenticated View Frame -->
     <div id="main-app-view" style="display: none; flex-direction: column; flex-grow: 1;">
       
-      <!-- Navigation Tabs (Dynamic) -->
       <nav class="nav-tabs" id="app-tabs">
         <button class="tab-btn active" id="tab-dashboard" data-target="dashboard-section">Dashboard</button>
+        <button class="tab-btn" id="tab-leaderboard" data-target="leaderboard-section">Leaderboard</button>
         <button class="tab-btn" id="tab-admin" data-target="admin-section" style="display: none;">Admin Panel</button>
       </nav>
 
@@ -133,6 +137,52 @@
             </div>
           </div>
 
+          <!-- Season Reset Control -->
+          <div class="glass-panel section-card" id="admin-reset-card" style="grid-column: 1 / -1; border-color: rgba(244, 63, 94, 0.25);">
+            <h2 class="section-title" style="color: var(--danger);">🚨 Reset Season & Archive Balances</h2>
+            <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+              Initiating a new season cycle will immediately perform the following atomic operations:
+            </p>
+            <ul style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; padding-left: 1.25rem; line-height: 1.6;">
+              <li>Cancel and <strong style="color: var(--success);">refund wagers</strong> for all active and pending P2P wagers back to users' active balances.</li>
+              <li>Archive everyone's resulting active balance into their personal <strong style="color: var(--accent);">cumulative Vault</strong>.</li>
+              <li>Reset all users' active balances back to the starting <strong style="color: var(--success);">250 GoalCoins</strong>.</li>
+              <li>Cancel all active events and predictions.</li>
+            </ul>
+            <button class="btn-primary" id="btn-reset-season" style="background: var(--danger); border-color: var(--danger); width: auto; padding: 0.6rem 1.5rem; font-weight: 700;">Reset Season Cycle</button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Leaderboard Section -->
+      <div class="dashboard-grid" id="leaderboard-section" style="display: none;">
+        <div class="admin-grid">
+          
+          <!-- Current Best Leaderboard -->
+          <div class="glass-panel section-card">
+            <h2 class="section-title">🏆 Current Best</h2>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+              Top players sorted by highest active GoalCoin balance:
+            </p>
+            <div id="leaderboard-active-list" style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem;">
+              <!-- Dynamic rows -->
+            </div>
+            <button class="btn-secondary" id="btn-unfold-active" style="width: 100%; font-weight: 700;">Unfold Top 50</button>
+          </div>
+
+          <!-- Vault Legends Leaderboard -->
+          <div class="glass-panel section-card">
+            <h2 class="section-title">🏦 Vault Legends</h2>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+              All-time legends sorted by highest archived Vault wealth:
+            </p>
+            <div id="leaderboard-vault-list" style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem;">
+              <!-- Dynamic rows -->
+            </div>
+            <button class="btn-secondary" id="btn-unfold-vault" style="width: 100%; font-weight: 700;">Unfold Top 50</button>
+          </div>
+
         </div>
       </div>
 
@@ -213,6 +263,17 @@
       </div>
 
     </div>
+  </div>
+
+  <!-- 5. Choice Selection Modal -->
+  <div class="drawer-backdrop" id="choice-modal-backdrop" style="z-index: 1001;"></div>
+  <div class="glass-panel" id="choice-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1002; width: 90%; max-width: 400px; padding: 2rem; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+    <h3 style="font-weight: 800; margin-bottom: 0.5rem; font-size: 1.3rem;">Choose Your Prediction</h3>
+    <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.95rem;">Select the outcome you want to back for this challenge:</p>
+    <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem;" id="choice-modal-options">
+      <!-- Options buttons go here -->
+    </div>
+    <button class="btn-secondary" id="choice-modal-cancel" style="width: 100%;">Cancel</button>
   </div>
 
   <!-- Firebase Web SDK Core and Products (v10+ ESM) -->
